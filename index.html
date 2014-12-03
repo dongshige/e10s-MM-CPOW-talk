@@ -5,7 +5,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
   <meta name="viewport" content="width=1024, user-scalable=no">
 
-  <title>Your deck.js Presentation</title>
+  <title>Electrolysis: A Crash Course</title>
 
   <!-- Required stylesheet -->
   <link rel="stylesheet" href="core/deck.core.css">
@@ -16,9 +16,11 @@
   <link rel="stylesheet" media="screen" href="extensions/navigation/deck.navigation.css">
   <link rel="stylesheet" media="screen" href="extensions/status/deck.status.css">
   <link rel="stylesheet" media="screen" href="extensions/scale/deck.scale.css">
+  <!--<link href="//www.mozilla.org/tabzilla/media/css/tabzilla.css" rel="stylesheet" />-->
 
   <!-- Style theme. More available in /themes/style/ or create your own. -->
-  <link rel="stylesheet" media="screen" href="themes/style/web-2.0.css">
+  <link rel="stylesheet" media="screen" href="themes/style/mozilla-sandstone-nightly.css">
+  <link rel="stylesheet" media="screen" href="themes/style/custom.css">
 
   <!-- Transition theme. More available in /themes/transition/ or create your own. -->
   <link rel="stylesheet" media="screen" href="themes/transition/horizontal-slide.css">
@@ -30,21 +32,217 @@
   <script src="modernizr.custom.js"></script>
 </head>
 <body>
-  <div class="deck-container">
 
+  <div class="deck-container">
+    <a href="https://www.mozilla.org/" id="tabzilla">mozilla</a>
     <!-- Begin slides. Just make elements with a class of slide. -->
 
     <section class="slide">
-      <h1>Slide</h1>
+      <h1>Electrolysis (e10s) for Firefox Hackers</h1>
     </section>
 
     <section class="slide">
-      <h1>Content</h1>
+      <h1>45 minutes is not enough, but please ask questions now or after</h1>
     </section>
 
     <section class="slide">
-      <h1>Here</h1>
+      <h2>The big picture</h2>
+      <ul>
+        <li class="slide">Separate rendering and processing of web content from the main browser process.
+          <ul>
+            <li class="slide">Crash a tab, not the browser (not so great with just the one content process...)</li>
+          </ul>
+        </li>
+        <li class="slide">Do not let the web content process block the main process (with caveats).</li>
+        <li class="slide">Eventually, sandbox the web content process.</li>
+      </ul>
     </section>
+
+    <section class="slide">
+      <h2>Terminology</h2>
+      <p class="slide">I will likely interchange the following without noticing, purely out of habit (sorry).</p>
+      <ul>
+        <li class="slide">"content process", "child process", "child"</li>
+        <li class="slide">"browser process", "chrome process", "parent process", "parent"</li>
+      </ul>
+      <p class="slide">"IPC" stands for "inter-process communication".</p>
+      <p class="slide">A "remote browser" is a &lt;xul:browser&gt; with the remote="true" attribute.</p>
+      <p class="slide">A "frame script" is a script that can be sent to a child process to hear and respond to messages</p>
+    </section>
+
+    <section class="slide">
+      <h1>Things browser hackers need to know</h1>
+    </section>
+
+    <section class="slide">
+      <h2>Message managers</h2>
+      <p class="slide">There are several types, and different types are available depending on which process you're in.</p>
+      <p class="slide">Check out <a href="https://developer.mozilla.org/en-US/Firefox/Multiprocess_Firefox/The_message_manager">the documentation for message managers on MDN</a> and the documentation in <a href="http://hg.mozilla.org/mozilla-central/file/2c9781c3e9b5/dom/base/nsIMessageManager.idl#l13">nsIMessageManager.idl</a> for a low-level breakdown.</p>
+      <p class="slide">The one you're most likely to work with is the "browser" message manager.</p>
+      <pre class="slide">
+        let browser = gBrowser.selectedBrowser;
+        let mm = browser.messageManager;
+        //  ^-- Available even if &lt;xul:browser&gt; is not remote!</pre>
+      <pre class="slide">
+        mm.sendAsyncMessage("Foo", {
+          bar: "baz", // JSON serializable stuff and nsIPrincipal's can go in here.
+        });
+
+        mm.addMessageListener("Done", (message) => {
+          dump("Child sent done.");
+        });</pre>
+      <pre class="slide">
+        -- snip --
+
+        // Inside some frame script:
+        addMessageListener("Foo", (message) => {
+          dump("Parent said: " + message.data.bar + "\n");
+          sendAsyncMessage("Done"); // Could also use sendSyncMessage("Done");
+        });</pre>
+    </section>
+
+    <section class="slide">
+      <h2>If the chrome needs to touch content...</h2>
+      <ul>
+        <li class="slide">Send a message to a frame script to do the dirty work.</li>
+        <li class="slide">This has to be async - the parent has no access to sendSyncMessage.</li>
+        <li class="slide">Message name example: PopupBlocking:UnblockPopup.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>If content needs to talk to chrome, send a message to the parent from a frame script.</h2>
+      <ul>
+        <li class="slide">Events used to bubble up to browser.js. This assumption is no longer safe.</li>
+        <li class="slide">Frame scripts have access to a number of things in their global scope. Check out this MDN article on <a href="https://developer.mozilla.org/en-US/Firefox/Multiprocess_Firefox/Frame_script_environment">the frame script environemnt</a>.</li>
+        <li class="slide">You have some access to Components/XPCOM here - but anything that touches the disk or tries to do things with UI is likely going to have a bad time.</li>
+        <li class="slide">Frame scripts can import JSM's too.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Important pre-existing frame scripts</h2>
+      <p class="slide">Loaded in all &lt;xul:browser&gt;'s, remote or not:
+        <ul>
+          <li class="slide">browser/base/content/content.js (for Firefox-specific things)</li>
+          <li class="slide">toolkit/content/browser-content.js</li>
+        </ul>
+      </p>
+      <p class="slide">Loaded just in remote &lt;xul:browser&gt;'s:
+        <ul>
+          <li class="slide">toolkit/content/browser-child.js</li>
+        </ul>
+      </p>
+    </section>
+
+    <section class="slide">
+      <h2>Bi-directional CPOWs</h2>
+      <ul>
+        <li class="slide">CPOW -> "Cross Process Object Wrapper", sometimes pronounced "SEE-pows"</li>
+        <li class="slide">A crutch to get add-ons and some browser code to work cross-process.</li>
+        <li class="slide">Allows us to <strong>synchronously</strong> access / manipulate anything that can be represented as a JS object.</li>
+        <li class="slide">Example:
+          <pre>
+            let doc = gBrowser.selectedBrowser.contentDocumentAsCPOW;
+            let el = doc.getElementById("someElementInContent");
+            if (el.hasAttribute("foo")) {
+              el.setAttribute("bar", "baz");
+            }
+          </pre>
+        </li>
+        <li class="slide">Can result in much IPC traffic = slow, blocks main process</li>
+        <li class="slide">Can result in dead-locks</li>
+        <li class="slide">Can result in crashes if passed to native code</li>
+        <li class="slide">Can unexpectedly die</li>
+        <li class="slide"><pre>Components.utils.isCrossProcessWrapper(thing);</pre></li>
+        <li class="slide">If you can avoid a CPOW without too much hassle, do it.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Intentionally sending a CPOW</h2>
+      <p>Sometimes, a CPOW is just the best way forward.</p>
+      <pre class="slide">
+        // Some frame script
+        addEventListener("click", (event) => {
+          sendAsyncMessage("Foo:Click", null, {
+            target: event.target,
+          });
+        });
+      </pre>
+      <pre class="slide">
+        -- snip --
+
+        // Parent process script
+        let mm = gBrowser.selectedBrowser.messageManager;
+        mm.addMessageListener("Foo:Click", (message) => {
+          dump("I got the item with ID: " + message.objects.target.id);
+        });
+      </pre>
+    </section>
+
+    <section class="slide">
+      <h1>Some anti-patterns with CPOWs</h1>
+    </section>
+
+    <section class="slide">
+      <h2>Lots of CPOW traffic - use a frame script instead.</h2>
+      <pre>
+        let doc = gBrowser.selectedBrowser.contentDocumentAsCPOW;
+        let anchors = doc.querySelectorAll("a");
+        for (let anchor of anchors) {
+          if (anchor.href.startsWith("https://")) {
+            el.classList.add("ssl");
+          }
+        }
+      </pre>
+    </section>
+
+    <section class="slide">
+      <h2>Just focus the browser element</h2>
+      <pre>
+        let win = gBrowser.selectedBrowser.contentWindowAsCPOW;
+        win.focus();
+      </pre>
+    </section>
+
+    <section class="slide">
+      <h2>This is likely going to explode in interesting ways.</h2>
+      <pre>
+        let win = gBrowser.selectedBrowser.contentWindowAsCPOW;
+        let docShell = win.QueryInterface(Ci.nsIInterfaceRequestor)
+                          .getInterface(Ci.nsIWebNavigation)
+                          .QueryInterface(Ci.nsIDocShell);
+
+        let svc = Cc["@mozilla.org/someservice;1"].getService(Ci.nsISomeService);
+        svc.someMethod(docShell);
+      </pre>
+    </section>
+
+    <section class="slide">
+      <h2>A few words on add-on shimming</h2>
+      <ul>
+        <li class="slide">Get contentWindow and contentDocument without needing the AsCPOW suffix</li>
+        <li class="slide">We can interpose fancy things for add-ons in place of various services or components - example: nsIObserverService.</li>
+        <li class="slide">Check out toolkit/components/addoncompat for the nitty gritty.</li>
+        <li class="slide">We're starting to measure CPOW traffic for add-ons.</li>
+        <li class="slide">We're starting to do pre-fetching and other optimizations in these shims.</li>
+    </section>
+
+    <section class="slide">
+      <h1>Questions!</h1>
+    </section>
+
+    <section class="slide">
+      <h2>Thanks!</h2>
+      <ul>
+        <li>Fork mah slides <a href="//github.com/mikeconley/e10s-MM-CPOW-talk/">github.com/mikeconley/e10s-MM-CPOW-talk</a></li>
+        <li>Check out my e10s bugnotes <a href="//people.mozilla.org/~mconley2/bugnotes/">people.mozilla.org/~mconley2/bugnotes</a></li>
+        <li>Twitter: <a href="//twitter.com/mike_conley/">@mike_conley</a></li>
+        <li>Blog: <a href="//mikeconley.ca">mikeconley.ca</a></li>
+      </ul>
+    </section>
+
 
     <!-- End slides. -->
 
@@ -79,11 +277,13 @@
 <script src="core/deck.core.js"></script>
 
 <!-- Extension JS files. Add or remove as needed. -->
+<!--<script src="//www.mozilla.org/tabzilla/media/js/tabzilla.js"></script>-->
 <script src="extensions/menu/deck.menu.js"></script>
 <script src="extensions/goto/deck.goto.js"></script>
 <script src="extensions/status/deck.status.js"></script>
 <script src="extensions/navigation/deck.navigation.js"></script>
 <script src="extensions/scale/deck.scale.js"></script>
+
 
 <!-- Initialize the deck. You can put this in an external file if desired. -->
 <script>
