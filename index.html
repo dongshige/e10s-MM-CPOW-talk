@@ -38,6 +38,10 @@
     <!-- Begin slides. Just make elements with a class of slide. -->
 
     <section class="slide">
+      <p><a href="#" id="toggle-fullscreen">Toggle fullscreen</a></p>
+    </section>
+
+    <section class="slide">
       <h1>Electrolysis (e10s) for Firefox Hackers</h1>
     </section>
 
@@ -114,13 +118,22 @@
       <h2>If content needs to talk to chrome, send a message to the parent from a frame script.</h2>
       <ul>
         <li class="slide">Events used to bubble up to browser.js. This assumption is no longer safe.</li>
-        <li class="slide">Frame scripts have access to a number of things in their global scope. Check out this MDN article on <a href="https://developer.mozilla.org/en-US/Firefox/Multiprocess_Firefox/Frame_script_environment">the frame script environemnt</a>.</li>
-        <li class="slide">You have some access to Components/XPCOM here - but anything that touches the disk or tries to do things with UI is likely going to have a bad time.</li>
+        <li class="slide">Frame scripts have access to a number of things in their global scope. Check out this MDN article on <a href="https://developer.mozilla.org/en-US/Firefox/Multiprocess_Firefox/Frame_script_environment">the frame script environment</a>.</li>
+        <li class="slide">You have some access to Components/XPCOM here - but anything that touches the disk or tries to do things with UI is ill-advised, though there are exceptions.</li>
         <li class="slide">Frame scripts can import JSM's too.</li>
       </ul>
     </section>
 
     <section class="slide">
+      <h2>Loading frame scripts</h2>
+      <pre>
+        let browser = gBrowser.selectedBrowser;
+        let mm = browser.messageManager;
+        mm.loadFrameScript("chrome://browser/content/foo.js", false);
+        // Set second arg to true if we want to load this once remote browser
+        // is ready / available. Otherwise, script will only load if remote
+        // browser is ready / available.
+      </pre>
       <h2>Important pre-existing frame scripts</h2>
       <p class="slide">Loaded in all &lt;xul:browser&gt;'s, remote or not:
         <ul>
@@ -288,8 +301,18 @@
 <!-- Initialize the deck. You can put this in an external file if desired. -->
 <script>
   $(function() {
+    $("#toggle-fullscreen").click(function() {
+      if (!document.mozFullScreenElement) {
+        document.documentElement.mozRequestFullScreen();
+      } else {
+        document.mozCancelFullScreen();
+      }
+    });
+
     $.deck('.slide');
   });
+
+
 </script>
 </body>
 </html>
